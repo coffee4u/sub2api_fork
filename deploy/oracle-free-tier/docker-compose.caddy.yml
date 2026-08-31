@@ -1,0 +1,15 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: sub2api-caddy
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      CADDY_DOMAIN: ${CADDY_DOMAIN:?CADDY_DOMAIN is required}
+      CADDY_EMAIL: ${CADDY_EMAIL:?CADDY_EMAIL is required}
+      CADDY_UPSTREAM: ${CADDY_UPSTREAM:-127.0.0.1:8080}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy_data:/data
+      - ./caddy_config:/config

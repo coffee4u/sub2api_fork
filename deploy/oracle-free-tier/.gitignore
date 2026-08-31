@@ -1,0 +1,4 @@
+artifacts/
+oracle.env
+*.tmp
+*.log
