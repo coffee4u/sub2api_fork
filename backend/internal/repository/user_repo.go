@@ -153,6 +153,7 @@ func (r *userRepository) create(ctx context.Context, userIn *service.User, guard
 		SetNillableLastLoginAt(userIn.LastLoginAt).
 		SetNillableLastActiveAt(userIn.LastActiveAt).
 		SetRpmLimit(userIn.RPMLimit).
+		SetRestrictPublicGroups(userIn.RestrictPublicGroups).
 		Save(txCtx)
 	if err != nil {
 		return translatePersistenceError(err, nil, service.ErrEmailExists)
@@ -316,6 +317,9 @@ func (r *userRepository) Update(ctx context.Context, userIn *service.User, field
 	if fields.Status {
 		updateOp = updateOp.SetStatus(userIn.Status)
 	}
+	if fields.RestrictPublicGroups {
+		updateOp = updateOp.SetRestrictPublicGroups(userIn.RestrictPublicGroups)
+	}
 	if fields.BalanceNotifySettings {
 		updateOp = updateOp.
 			SetBalanceNotifyEnabled(userIn.BalanceNotifyEnabled).
@@ -344,6 +348,18 @@ func (r *userRepository) Update(ctx context.Context, userIn *service.User, field
 
 	if fields.AllowedGroups {
 		if err := r.syncUserAllowedGroupsWithClient(txCtx, txClient, updated.ID, userIn.AllowedGroups); err != nil {
+			return err
+		}
+	}
+	// 停用或降级时在同一事务内吊销 MCP 授权，恢复账号或角色后旧授权不会复活。
+	disabled := fields.Status && updated.Status != existing.Status && updated.Status != service.StatusActive
+	demoted := fields.Role && updated.Role != existing.Role && updated.Role != service.RoleAdmin
+	if disabled || demoted {
+		exec := txAwareSQLExecutor(txCtx, r.sql, r.client)
+		if exec == nil {
+			return fmt.Errorf("sql executor is not configured")
+		}
+		if err := revokeMCPGrants(txCtx, exec, updated.ID, !disabled, time.Now().UTC()); err != nil {
 			return err
 		}
 	}
